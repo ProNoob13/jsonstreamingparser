@@ -4,10 +4,24 @@ declare(strict_types=1);
 
 namespace JsonStreamingParser;
 
-use JsonStreamingParser\Listener\AsyncInterface;
+use JsonStreamingParser\Listener\AsyncListenerInterface;
 
-class AsyncParser extends Parser implements AsyncInterface
+class AsyncParser extends Parser
 {
+    /**
+     * AsyncParser constructor.
+     * @param resource $stream
+     * @param AsyncListenerInterface $listener
+     * @param string $lineEnding
+     * @param bool $emitWhitespace
+     * @param int $bufferSize
+     */
+    public function __construct($stream, AsyncListenerInterface $listener, string $lineEnding = "\n", bool $emitWhitespace = false, int $bufferSize = 8192)
+    {
+        $listener->setAsyncCallback([$this, 'proceed']);
+        parent::__construct($stream, $listener, $lineEnding, $emitWhitespace, $bufferSize);
+    }
+
     public function parse(): void
     {
         $this->resetParser();

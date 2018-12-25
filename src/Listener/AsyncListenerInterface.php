@@ -2,6 +2,7 @@
 
     namespace JsonStreamingParser\Listener;
 
-    interface AsyncListenerInterface extends ListenerInterface, AsyncInterface
+    interface AsyncListenerInterface extends ListenerInterface
     {
+        public function setAsyncCallback(callable $callback): void;
     }
