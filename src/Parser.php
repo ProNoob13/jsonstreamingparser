@@ -37,24 +37,14 @@ class Parser
     const UTF32_BOM = 3;
 
     /**
-     * @var int
-     */
-    private $state;
-
-    /**
-     * @var int[]
-     */
-    private $stack = [];
-
-    /**
      * @var resource
      */
     private $stream;
 
     /**
-     * @var ListenerInterface
+     * @var int[]
      */
-    private $listener;
+    private $stack = [];
 
     /**
      * @var bool
@@ -65,11 +55,6 @@ class Parser
      * @var string
      */
     private $buffer = '';
-
-    /**
-     * @var int
-     */
-    private $bufferSize;
 
     /**
      * @var string[]
@@ -87,32 +72,55 @@ class Parser
     private $unicodeEscapeBuffer = '';
 
     /**
-     * @var string
-     */
-    private $lineEnding;
-
-    /**
-     * @var int
-     */
-    private $lineNumber;
-
-    /**
-     * @var int
-     */
-    private $charNumber;
-
-    /**
-     * @var bool
-     */
-    private $stopParsing = false;
-
-    /**
      * @var int
      */
     private $utfBom = 0;
 
     /**
+     * @var int
+     */
+    protected $state;
+
+    /**
+     * @var ListenerInterface
+     */
+    protected $listener;
+
+    /**
+     * @var int
+     */
+    protected $bufferSize;
+
+    /**
+     * @var string
+     */
+    protected $lineEnding;
+
+    /**
+     * @var int
+     */
+    protected $lineNumber;
+
+    /**
+     * @var int
+     */
+    protected $charNumber;
+    /**
+     * @var bool
+     */
+    protected $endOfFile;
+
+    /**
+     * @var bool
+     */
+    protected $stopParsing = false;
+
+    /**
      * @param resource $stream
+     * @param ListenerInterface $listener
+     * @param string $lineEnding
+     * @param bool $emitWhitespace
+     * @param int $bufferSize
      */
     public function __construct($stream, ListenerInterface $listener, string $lineEnding = "\n", bool $emitWhitespace = false, int $bufferSize = 8192)
     {
@@ -130,39 +138,10 @@ class Parser
 
     public function parse(): void
     {
-        $this->lineNumber = 1;
-        $this->charNumber = 1;
-        $eof = false;
+        $this->resetParser();
 
-        while (!feof($this->stream) && !$eof) {
-            $pos = ftell($this->stream);
-            $line = stream_get_line($this->stream, $this->bufferSize, $this->lineEnding);
-
-            if (false === $line) {
-                $line = '';
-            }
-
-            $ended = (bool) (ftell($this->stream) - \strlen($line) - $pos);
-            // if we're still at the same place after stream_get_line, we're done
-            $eof = ftell($this->stream) === $pos;
-
-            $byteLen = \strlen($line);
-            for ($i = 0; $i < $byteLen; ++$i) {
-                if ($this->listener instanceof PositionAwareInterface) {
-                    $this->listener->setFilePosition($this->lineNumber, $this->charNumber);
-                }
-                $this->consumeChar($line[$i]);
-                ++$this->charNumber;
-
-                if ($this->stopParsing) {
-                    return;
-                }
-            }
-
-            if ($ended) {
-                ++$this->lineNumber;
-                $this->charNumber = 1;
-            }
+        while (!$this->endOfFile) {
+            $this->readStream();
         }
     }
 
@@ -171,7 +150,52 @@ class Parser
         $this->stopParsing = true;
     }
 
-    private function consumeChar(string $char): void
+    protected function resetParser(): void
+    {
+        $this->lineNumber = 1;
+        $this->charNumber = 1;
+        $this->endOfFile = false;
+    }
+
+    protected function readStream(): void
+    {
+        if(feof($this->stream)) {
+            // even if we haven't reached the last byte, the stream might've ended abruptly
+            // short-circuit so we won't get reading errors from the now closed resource
+            return;
+        }
+
+        $pos = ftell($this->stream);
+        $line = stream_get_line($this->stream, $this->bufferSize, $this->lineEnding);
+
+        if (false === $line) {
+            $line = '';
+        }
+
+        $ended = (bool) (ftell($this->stream) - \strlen($line) - $pos);
+        // if we're still at the same place after stream_get_line, we're done
+        $this->endOfFile = ftell($this->stream) === $pos;
+
+        $byteLen = \strlen($line);
+        for ($i = 0; $i < $byteLen; ++$i) {
+            if ($this->listener instanceof PositionAwareInterface) {
+                $this->listener->setFilePosition($this->lineNumber, $this->charNumber);
+            }
+            $this->consumeChar($line[$i]);
+            ++$this->charNumber;
+
+            if ($this->stopParsing) {
+                return;
+            }
+        }
+
+        if ($ended) {
+            ++$this->lineNumber;
+            $this->charNumber = 1;
+        }
+    }
+
+    protected function consumeChar(string $char): void
     {
         // see https://en.wikipedia.org/wiki/Byte_order_mark
         if ($this->charNumber < 5 && 1 === $this->lineNumber && $this->checkAndSkipUtfBom($char)) {
